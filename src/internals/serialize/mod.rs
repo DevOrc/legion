@@ -1,6 +1,6 @@
 //! Contains types required to serialize and deserialize a world via the serde library.
 
-use std::{collections::HashMap, hash::Hash, marker::PhantomData};
+use std::{collections::HashMap, collections::HashSet, hash::Hash, marker::PhantomData};
 
 use de::{WorldDeserializer, WorldVisitor};
 use id::EntitySerializer;
@@ -76,6 +76,7 @@ where
 {
     _phantom_t: PhantomData<T>,
     missing: UnknownType,
+    ignore: HashSet<ComponentTypeId>,
     serialize_fns: HashMap<
         ComponentTypeId,
         (
@@ -97,6 +98,7 @@ where
     pub fn new() -> Self {
         Self {
             missing: UnknownType::Error,
+            ignore: HashSet::new(),
             serialize_fns: HashMap::new(),
             constructors: HashMap::new(),
             _phantom_t: PhantomData,
@@ -106,6 +108,12 @@ where
     /// Sets the behavior to use when a component type is unknown.
     pub fn on_unknown(&mut self, unknown: UnknownType) {
         self.missing = unknown;
+    }
+
+    /// Ignores the component, regardless of `on_unknown`
+    pub fn ignore<C: Component>(&mut self) { 
+        let type_id = ComponentTypeId::of::<C>();
+        self.ignore.insert(type_id);
     }
 
     /// Registers a component type and its key with the registry.
@@ -240,7 +248,9 @@ where
     }
 
     fn map_id(&self, type_id: ComponentTypeId) -> Result<Self::TypeId, UnknownType> {
-        if let Some(type_id) = self
+        if self.ignore.contains(&type_id) { 
+            Err(UnknownType::Ignore)
+        } else if let Some(type_id) = self
             .serialize_fns
             .get(&type_id)
             .map(|(type_id, _, _, _, _)| type_id.clone())
